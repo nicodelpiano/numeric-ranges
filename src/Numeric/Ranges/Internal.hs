@@ -15,6 +15,9 @@
 
 module Numeric.Ranges.Internal where
 
+import Control.Applicative ((<$>))
+import Data.Maybe (fromJust, fromMaybe)
+
 -- | Range
 --
 -- It represents a range from a to b, with information about endpoints.
@@ -43,33 +46,40 @@ instance (Show a) => Show (Range a) where
 
 -- | Ord instance for Extreme
 instance Ord Extreme where
-  Open <= Closed = True
+  Closed <= Open = False
+  _ <= _ = True
+
+-- | Ord instance for Endpoint a
+instance (Num a, Ord a) => Ord (Endpoint a) where
+  el <= er = value el < value er || (value el == value er && extreme el <= extreme er)
 
 -- | Num instance for Endpoint a
 instance (Num a, Ord a) => Num (Endpoint a) where
-  el + er = (value el + value er, max $ extreme el $ extreme er)
+  el + er = endpoint (value el + value er) (max (extreme el) (extreme er))
 
-  el - er = (value el - value er, min $ extreme el $ extreme er)
+  el - er = endpoint (value el - value er) (min (extreme el) (extreme er))
 
-  el * er = (value el * value er, max $ extreme el $ extreme er)
+  el * er = endpoint (value el * value er) (max (extreme el) (extreme er))
 -- | Num instance for Range a
 --
 -- re and le stand for right endpoint and left endpoint.
 instance (Num a, Ord a) => Num (Range a) where
-  Rg le re + Rg le' re' = Rg (le + le') (re' + re')
+  Rg le re + Rg le' re' = Rg (le + le') (re + re')
   _ + _ = Empty
 
-  Rg le re - Rg le' re' = Rg (le - le') (re' - re')
+  Rg le re - Rg le' re' = Rg (le - le') (re - re')
   _ - _ = Empty
 
   Rg le re * Rg le' re' = Rg (minimum prods) (maximum prods)
     where
-    prods = [le*le', le*re', re*le', re*re']
+    prods = [le * le', le * re', re * le', re * re']
+  _ * _ = Empty
 
   abs r@(Rg le re)
     | le >= 0 = r
     | re <= 0 = negate r 
-    | otherwise = 0 ~~ max (-le) re
+    | otherwise = 0 ~~ (value $ max (-le) re)
+  abs Empty = Empty
 
 infix 3 ><
 infix 3 >~
@@ -100,13 +110,27 @@ x ~~ y
   | x <= y = Rg (E (x, Closed)) (E (y, Closed))
   | otherwise = Empty
 
+-- | Get the left endpoint from a range.
+leftBound :: Range a -> Maybe (Endpoint a)
+leftBound Empty = Nothing
+leftBound (Rg l _) = Just l
+
+-- | Get the right endpoint from a range.
+rightBound :: Range a -> Maybe (Endpoint a)
+rightBound Empty = Nothing
+rightBound (Rg _ r) = Just r
+
+-- | Builds an endpoint.
+endpoint :: a -> Extreme -> Endpoint a
+endpoint x e = E (x, e)
+
 -- | Take the extreme value from an endpoint.
 extreme :: Endpoint a -> Extreme
 extreme (E (_, e)) = e
 
 -- | Take the endpoint number value from an endpoint.
 value :: Endpoint a -> a
-value (E (x, e)) = x
+value (E (x, _)) = x
 
 -- | Is a closed endpoint?
 isClosed :: Endpoint a -> Bool
@@ -136,10 +160,9 @@ empty = Empty
 --
 -- degenerate [a, a] = a
 degenerate :: (Num a, Ord a) => Range a -> Maybe a
-degenerate (Rg (E (x, Closed)) (E (y, Closed)))
-  | x == y = Just x
+degenerate r
+  | isUnitary r = Just . value . fromJust . rightBound $ r
   | otherwise = Nothing
-degenerate _ = Nothing
 
 -- | A unitary range.
 --
@@ -149,13 +172,23 @@ unitary x = x ~~ x
 
 -- | Is the given range a unitary element?
 isUnitary :: (Num a, Ord a) => Range a -> Bool
-isUnitary (Rg (E (x, _)) (E (y, _))) = x == y
+isUnitary r@(Rg x y) = value x == value y && isClosedRange r
 isUnitary _ = False
 
 -- | Is the given range empty?
-isEmpty :: (Num a, Ord a) => Range a -> Bool
+isEmpty :: Range a -> Bool
 isEmpty Empty = True
 isEmpty _ = False
+
+-- | Is the given range closed?
+isClosedRange :: Range a -> Bool
+isClosedRange (Rg (E (_, Closed)) (E (_, Closed))) = True
+isClosedRange _ = False
+
+-- | Is the given range open?
+isOpenRange :: Range a -> Bool
+isOpenRange (Rg (E (_, Open)) (E (_, Open))) = True
+isOpenRange _ = False
 
 -- | Range length.
 --
@@ -166,13 +199,11 @@ range (Rg x y) = value y - value x
 
 -- | The infimum of a range.
 infimum :: (Num a, Ord a) => Range a -> a
-infimum Empty = error "infimum: Empty range."
-infimum (Rg x _) = value x
+infimum r = fromMaybe (error "infimum: Empty range.") $ value <$> leftBound r
 
 -- | The supreme of a range.
 supreme :: (Num a, Ord a) => Range a -> a
-supreme Empty = error "supreme: Empty range."
-supreme (Rg _ y) = value y
+supreme r = fromMaybe (error "supreme: Empty range.") $ value <$> rightBound r
 
 -- | Is the given element present in the range?
 --
@@ -181,24 +212,26 @@ supreme (Rg _ y) = value y
 --   isX 3 $ 1 >~ 3   -> True
 inX :: (Num a, Ord a) => a -> Range a -> Bool
 inX _ Empty = False
-inX x r = go
+inX x rg@(Rg le re)
+  | isOpenRange rg = x > l && x < r
+  | isClosed le && isOpen re = x >= l && x < r
+  | isOpen le && isClosed re = x > l && x <= r
+  | otherwise = x >= l && x <= r
   where
-  go x (Rg (l, Open) (r, Open)) = x > l && x < r
-  go x (Rg (l, Closed) (r, Open)) = x >= l && x < r
-  go x (Rg (l, Open) (r, Closed)) = x > l && x <= r
-  go x (Rg (l, Closed) (r, Closed)) = x >= l && x <= r
+  l = value le
+  r = value re
 
 -- | Is the given element not present in the range?
 notX :: (Num a, Ord a) => a -> Range a -> Bool
-notX = not . inX
+notX x = not . inX x
 
 -- | Builds a range from a given number.
 --
 -- Example:
 --   rangeFrom 3 = [3, inf)
-rangeFrom :: (Num a, Ord a) => a -> Range a
+rangeFrom :: (Fractional a, Num a, Ord a) => a -> Range a
 rangeFrom = (~<inf)
 
 -- | Builds an open range from a given number.
-openFrom :: (Num a, Ord a) => a -> Range a
+openFrom :: (Fractional a, Num a, Ord a) => a -> Range a
 openFrom = (><inf)
