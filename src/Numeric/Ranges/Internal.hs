@@ -33,6 +33,7 @@ data Endpoint a = E (a, Extreme)
 data Extreme = Open | Closed
   deriving (Eq, Show)
 
+-- | Show instance for Range.
 instance (Show a) => Show (Range a) where
   show Empty = "Empty"
   show (Rg (E (x, l)) (E (y, r))) =
@@ -44,23 +45,30 @@ instance (Show a) => Show (Range a) where
     showRightB Closed = "]"
     showRightB Open   = ")"
 
--- | Ord instance for Extreme
+-- | Ord instance for Extreme.
 instance Ord Extreme where
   Closed <= Open = False
   _ <= _ = True
 
--- | Ord instance for Endpoint a
+-- | Ord instance for Endpoint a.
 instance (Num a, Ord a) => Ord (Endpoint a) where
   el <= er = value el < value er || (value el == value er && extreme el <= extreme er)
 
--- | Num instance for Endpoint a
+-- | Num instance for Endpoint a.
 instance (Num a, Ord a) => Num (Endpoint a) where
-  el + er = endpoint (value el + value er) (max (extreme el) (extreme er))
+  el + er = endpoint (value el + value er) $ max (extreme el) (extreme er)
 
-  el - er = endpoint (value el - value er) (min (extreme el) (extreme er))
+  el - er = endpoint (value el - value er) $ min (extreme el) (extreme er)
 
-  el * er = endpoint (value el * value er) (max (extreme el) (extreme er))
--- | Num instance for Range a
+  el * er = endpoint (value el * value er) $ max (extreme el) (extreme er)
+
+  abs = fmap abs
+
+  signum = fmap signum
+
+  fromInteger i = endpoint (fromInteger i) Closed
+
+-- | Num instance for Range a.
 --
 -- re and le stand for right endpoint and left endpoint.
 instance (Num a, Ord a) => Num (Range a) where
@@ -78,8 +86,25 @@ instance (Num a, Ord a) => Num (Range a) where
   abs r@(Rg le re)
     | le >= 0 = r
     | re <= 0 = negate r 
-    | otherwise = 0 ~~ (value $ max (-le) re)
+    | otherwise = 0 ~~ (value $ max (-le) re) -- we should do a deeper analysis for open endpoints
   abs Empty = Empty
+
+  signum = fmap signum
+
+  fromInteger i = unitary $ fromInteger i
+
+-- | Functor instance for endpoints.
+--
+-- TODO: proofs.
+instance Functor Endpoint where
+  fmap f e = endpoint (f $ value e) $ extreme e
+
+-- | Functor instance for Range.
+--
+-- TODO: proofs.
+instance Functor Range where
+  fmap _ Empty = Empty
+  fmap f (Rg le re) = Rg (fmap f le) (fmap f re)
 
 infix 3 ><
 infix 3 >~
@@ -131,6 +156,13 @@ extreme (E (_, e)) = e
 -- | Take the endpoint number value from an endpoint.
 value :: Endpoint a -> a
 value (E (x, _)) = x
+
+-- | Switches the endpoints of a range.
+--
+-- We can lose the invariant: [x, y] then x <= y.
+switch :: Range a -> Range a
+switch Empty = Empty
+switch (Rg x y) = Rg y x
 
 -- | Is a closed endpoint?
 isClosed :: Endpoint a -> Bool
@@ -235,3 +267,30 @@ rangeFrom = (~<inf)
 -- | Builds an open range from a given number.
 openFrom :: (Fractional a, Num a, Ord a) => a -> Range a
 openFrom = (><inf)
+
+-- | Constructs a symmetric range.
+symmetric :: (Num a, Ord a) => a -> Range a
+symmetric x
+  | x >= 0 = (-x) ~~ x
+  | otherwise = symmetric (-x)
+
+-- | Obtains the midpoint of a given range.
+midpoint :: (Fractional a, Ord a) => Range a -> a
+midpoint Empty = error "midpoint: Empty range."
+midpoint r = x + (y - x) / 2
+  where
+  x = infimum r
+  y = supreme r
+
+-- | Splits a range by a given number.
+splitBy :: (Num a, Ord a) => a -> Range a -> (Range a, Range a)
+splitBy x r
+  | inX x r = (Rg (endpoint (infimum r) $ extreme . fromJust . leftBound $ r) point, Rg point (endpoint (supreme r) $ extreme . fromJust . rightBound $ r))
+  | otherwise = (Empty, Empty)
+  where
+  point = endpoint x Closed
+
+-- | Bisects a range.
+bisect :: (Fractional a, Ord a) => Range a -> (Range a, Range a)
+bisect Empty = error "bisect: Empty range."
+bisect r = splitBy (midpoint r) r
