@@ -140,10 +140,20 @@ leftBound :: Range a -> Maybe (Endpoint a)
 leftBound Empty = Nothing
 leftBound (Rg l _) = Just l
 
+-- | Get the left endpoint from a range (unsafe).
+unsafeLBound :: Range a -> Endpoint a
+unsafeLBound Empty = error "unsafeLBound: Empty range."
+unsafeLBound r = fromJust . leftBound $ r
+
 -- | Get the right endpoint from a range.
 rightBound :: Range a -> Maybe (Endpoint a)
 rightBound Empty = Nothing
 rightBound (Rg _ r) = Just r
+
+-- | Get the right endpoint from a range (unsafe).
+unsafeRBound :: Range a -> Endpoint a
+unsafeRBound Empty = error "unsafeRBound: Empty range."
+unsafeRBound r = fromJust . rightBound $ r
 
 -- | Builds an endpoint.
 endpoint :: a -> Extreme -> Endpoint a
@@ -222,12 +232,9 @@ isOpenRange :: Range a -> Bool
 isOpenRange (Rg (E (_, Open)) (E (_, Open))) = True
 isOpenRange _ = False
 
--- | Range length.
---
--- range (a,b) = b - a 
-range :: (Num a, Ord a) => Range a -> a
-range Empty = 0 
-range (Rg x y) = value y - value x
+-- | Range constructor.
+range :: Endpoint a -> Endpoint a -> Range a
+range = Rg
 
 -- | The infimum of a range.
 infimum :: (Num a, Ord a) => Range a -> a
@@ -236,6 +243,13 @@ infimum r = fromMaybe (error "infimum: Empty range.") $ value <$> leftBound r
 -- | The supreme of a range.
 supreme :: (Num a, Ord a) => Range a -> a
 supreme r = fromMaybe (error "supreme: Empty range.") $ value <$> rightBound r
+
+-- | Range length.
+--
+-- distance (a,b) = b - a 
+distance :: (Num a, Ord a) => Range a -> a
+distance Empty = 0 
+distance r = supreme r - infimum r
 
 -- | Is the given element present in the range?
 --
@@ -285,12 +299,38 @@ midpoint r = x + (y - x) / 2
 -- | Splits a range by a given number.
 splitBy :: (Num a, Ord a) => a -> Range a -> (Range a, Range a)
 splitBy x r
-  | inX x r = (Rg (endpoint (infimum r) $ extreme . fromJust . leftBound $ r) point, Rg point (endpoint (supreme r) $ extreme . fromJust . rightBound $ r))
+  | inX x r = (range leftE point, range point rightE)
   | otherwise = (Empty, Empty)
   where
   point = endpoint x Closed
+  leftE = endpoint (infimum r) $ extreme . unsafeLBound $ r
+  rightE = endpoint (supreme r) $ extreme . unsafeRBound $ r
 
 -- | Bisects a range.
 bisect :: (Fractional a, Ord a) => Range a -> (Range a, Range a)
 bisect Empty = error "bisect: Empty range."
 bisect r = splitBy (midpoint r) r
+
+-- | Tells us whether or not the given ranges intersect.
+intersect :: (Num a, Ord a) => Range a -> Range a -> Bool
+intersect Empty _ = False
+intersect _ Empty = False
+intersect lr rr
+  | supreme lr == infimum rr && (isClosed $ unsafeRBound lr) && (isClosed $ unsafeLBound rr) = True
+  | supreme lr > infimum rr = True
+  | otherwise = False
+
+-- | Intersection between two ranges.
+--
+-- Examples:
+--   [1,2] \cup [2,3] = [2,2]
+--   (1,2) \cup [2,3) = Empty
+--   (1,2) \cup (5,7] = Empty
+--   (1,9) \cup (7,12) = (7,9)
+intersection :: (Num a, Ord a) => Range a -> Range a -> Range a
+intersection lr rr
+  | intersect lr rr = range le re
+  | otherwise = Empty
+  where
+  le = max (unsafeLBound lr) (unsafeLBound rr)
+  re = min (unsafeRBound lr) (unsafeRBound rr)
