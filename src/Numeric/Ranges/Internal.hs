@@ -141,9 +141,9 @@ leftBound Empty = Nothing
 leftBound (Rg l _) = Just l
 
 -- | Get the left endpoint from a range (unsafe).
-unsafeLBound :: Range a -> Endpoint a
-unsafeLBound Empty = error "unsafeLBound: Empty range."
-unsafeLBound r = fromJust . leftBound $ r
+leftBound' :: Range a -> Endpoint a
+leftBound' Empty = error "leftBound': Empty range."
+leftBound' r = fromJust . leftBound $ r
 
 -- | Get the right endpoint from a range.
 rightBound :: Range a -> Maybe (Endpoint a)
@@ -151,9 +151,9 @@ rightBound Empty = Nothing
 rightBound (Rg _ r) = Just r
 
 -- | Get the right endpoint from a range (unsafe).
-unsafeRBound :: Range a -> Endpoint a
-unsafeRBound Empty = error "unsafeRBound: Empty range."
-unsafeRBound r = fromJust . rightBound $ r
+rightBound' :: Range a -> Endpoint a
+rightBound' Empty = error "rightBound': Empty range."
+rightBound' r = fromJust . rightBound $ r
 
 -- | Builds an endpoint.
 endpoint :: a -> Extreme -> Endpoint a
@@ -303,8 +303,8 @@ splitBy x r
   | otherwise = (Empty, Empty)
   where
   point = endpoint x Closed
-  leftE = endpoint (infimum r) $ extreme . unsafeLBound $ r
-  rightE = endpoint (supreme r) $ extreme . unsafeRBound $ r
+  leftE = endpoint (infimum r) $ extreme . leftBound' $ r
+  rightE = endpoint (supreme r) $ extreme . rightBound' $ r
 
 -- | Bisects a range.
 bisect :: (Fractional a, Ord a) => Range a -> (Range a, Range a)
@@ -316,7 +316,7 @@ intersect :: (Num a, Ord a) => Range a -> Range a -> Bool
 intersect Empty _ = False
 intersect _ Empty = False
 intersect lr rr
-  | supreme lr == infimum rr && (isClosed $ unsafeRBound lr) && (isClosed $ unsafeLBound rr) = True
+  | supreme lr == infimum rr && (isClosed $ rightBound' lr) && (isClosed $ leftBound' rr) = True
   | supreme lr > infimum rr = True
   | otherwise = False
 
@@ -332,5 +332,6 @@ intersection lr rr
   | intersect lr rr = range le re
   | otherwise = Empty
   where
-  le = max (unsafeLBound lr) (unsafeLBound rr)
-  re = min (unsafeRBound lr) (unsafeRBound rr)
+  -- Fix right endpoints!
+  le = max (leftBound' lr) (leftBound' rr)
+  re = min (rightBound' lr) (rightBound' rr)
