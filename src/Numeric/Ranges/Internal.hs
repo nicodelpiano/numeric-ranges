@@ -135,22 +135,22 @@ x ~~ y
   | x <= y = Rg (E (x, Closed)) (E (y, Closed))
   | otherwise = Empty
 
--- | Get the left endpoint from a range.
+-- | Gets the left endpoint from a range.
 leftBound :: Range a -> Maybe (Endpoint a)
 leftBound Empty = Nothing
 leftBound (Rg l _) = Just l
 
--- | Get the left endpoint from a range (unsafe).
+-- | Gets the left endpoint from a range (unsafe).
 leftBound' :: Range a -> Endpoint a
 leftBound' Empty = error "leftBound': Empty range."
 leftBound' r = fromJust . leftBound $ r
 
--- | Get the right endpoint from a range.
+-- | Gets the right endpoint from a range.
 rightBound :: Range a -> Maybe (Endpoint a)
 rightBound Empty = Nothing
 rightBound (Rg _ r) = Just r
 
--- | Get the right endpoint from a range (unsafe).
+-- | Gets the right endpoint from a range (unsafe).
 rightBound' :: Range a -> Endpoint a
 rightBound' Empty = error "rightBound': Empty range."
 rightBound' r = fromJust . rightBound $ r
@@ -159,11 +159,15 @@ rightBound' r = fromJust . rightBound $ r
 endpoint :: a -> Extreme -> Endpoint a
 endpoint x e = E (x, e)
 
--- | Take the extreme value from an endpoint.
+-- | Takes the extreme value from an endpoint.
 extreme :: Endpoint a -> Extreme
 extreme (E (_, e)) = e
 
--- | Take the endpoint number value from an endpoint.
+-- | Applies a function to the extreme value of an endpoint.
+applyExtreme :: (Extreme -> Extreme) -> Endpoint a -> Endpoint a
+applyExtreme f e = endpoint (value e) $ f (extreme e)
+
+-- | Takes the endpoint number value from an endpoint.
 value :: Endpoint a -> a
 value (E (x, _)) = x
 
@@ -180,7 +184,15 @@ isClosed = (Closed ==) . extreme
 
 -- | Is an open endpoint?
 isOpen :: Endpoint a -> Bool
-isOpen = (Open ==) . extreme
+isOpen = not . isClosed
+
+-- | Makes an endpoint closed.
+close :: Endpoint a -> Endpoint a
+close = applyExtreme (max Closed)
+
+-- | Makes an endpoint open.
+open :: Endpoint a -> Endpoint a
+open = applyExtreme (min Open) 
 
 -- | Positive infinity
 inf :: (Fractional a) => a
@@ -195,7 +207,7 @@ full :: (Fractional a, Ord a) => Range a
 full = ninf >< inf
 
 -- | An empty range
-empty :: (Fractional a, Ord a) => Range a
+empty :: (Ord a) => Range a
 empty = Empty
 
 -- | Degenerate.
@@ -267,7 +279,7 @@ inX x rg@(Rg le re)
   l = value le
   r = value re
 
--- | Is the given element not present in the range?
+-- | Checks if the element `x` is not present in the range.
 notX :: (Num a, Ord a) => a -> Range a -> Bool
 notX x = not . inX x
 
@@ -297,10 +309,10 @@ midpoint r = x + (y - x) / 2
   y = supreme r
 
 -- | Splits a range by a given number.
-splitBy :: (Num a, Ord a) => a -> Range a -> (Range a, Range a)
+splitBy :: (Fractional a, Num a, Ord a) => a -> Range a -> (Range a, Range a)
 splitBy x r
   | inX x r = (range leftE point, range point rightE)
-  | otherwise = (Empty, Empty)
+  | otherwise = (empty, empty)
   where
   point = endpoint x Closed
   leftE = endpoint (infimum r) $ extreme . leftBound' $ r
@@ -315,23 +327,56 @@ bisect r = splitBy (midpoint r) r
 intersect :: (Num a, Ord a) => Range a -> Range a -> Bool
 intersect Empty _ = False
 intersect _ Empty = False
-intersect lr rr
-  | supreme lr == infimum rr && (isClosed $ rightBound' lr) && (isClosed $ leftBound' rr) = True
-  | supreme lr > infimum rr = True
-  | otherwise = False
+intersect lr rr =
+  (supreme lr == infimum rr
+  && (isClosed $ rightBound' lr)
+  && (isClosed $ leftBound' rr))
+  || supreme lr > infimum rr
+
+-- | Applies a function f which depends on the endpoint's nature, that is,
+-- if they're open or closed.
+applyOnRanges :: (Ord a, Ord b, Ord c) =>
+  (Endpoint a -> Endpoint b -> Endpoint c) ->
+  (Endpoint a -> Endpoint b -> Endpoint c) ->
+  Range a -> Range b -> Range c
+applyOnRanges _ _ Empty _ = empty
+applyOnRanges _ _ _ Empty = empty
+applyOnRanges f g lr rr = range leftRange rightRange
+  where
+  leftRange = f (leftBound' lr) (leftBound' rr)
+  rightRange = g (rightBound' lr) (rightBound' rr)
+
+-- | Applies a function `f` and `g` to the components
+-- of the provided endpoint.
+applyOnEndpoints :: (Ord a, Num a) =>
+  Endpoint a -> Endpoint a
+  -> (a -> a -> a)
+  -> (Extreme -> Extreme -> Extreme)
+  -> Endpoint a
+applyOnEndpoints (E (xl, el)) (E (xr, er)) f g =
+  E (f xl xr, g el er)
 
 -- | Intersection between two ranges.
 --
 -- Examples:
---   [1,2] \cup [2,3] = [2,2]
---   (1,2) \cup [2,3) = Empty
---   (1,2) \cup (5,7] = Empty
---   (1,9) \cup (7,12) = (7,9)
+--   [1,2] \cap [2,3] = [2,2]
+--   (1,2) \cap [2,3) = Empty
+--   (1,2) \cap (5,7] = Empty
+--   (1,9) \cap (7,12) = (7,9)
+--   [1,9) \cap (1,9) = (1,9)
 intersection :: (Num a, Ord a) => Range a -> Range a -> Range a
 intersection lr rr
   | intersect lr rr = range le re
-  | otherwise = Empty
+  | otherwise = empty
   where
-  -- Fix right endpoints!
-  le = max (leftBound' lr) (leftBound' rr)
+  le = applyOnEndpoints (leftBound' lr) (leftBound' rr) max min
   re = min (rightBound' lr) (rightBound' rr)
+
+-- | Calculates the smallest convex set that contains X.
+--
+-- In general,
+--   [a,b] `hull` [c,d] = [a,d]
+hull :: (Ord a, Num a) => Range a -> Range a -> Range a
+hull Empty rr = rr
+hull lr Empty = lr
+hull lr rr = applyOnRanges min max lr rr 
