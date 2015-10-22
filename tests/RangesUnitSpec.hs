@@ -94,8 +94,19 @@ spec = do
     describe "Ranges" $ do
       describe "intersection" $ do
         it ("The intersection between " ++ show range1 ++ " " ++
-          show range2 ++ "is" ++ show range1) $ do
+          show range2 ++ " is " ++ show range1) $ do
           intersection range1 range2 `shouldBe` range1
+
+        it ("The intersection between " ++ show range5 ++ " " ++
+           show range9 ++ " is " ++ show range5) $ do
+          intersection range5 range9 `shouldBe` range5
+
+      describe "inX" $ do
+        it ("The element `1` is in " ++ show range16) $ do
+          inX 1 range16 `shouldBe` True
+
+        it ("The element `0` is not in " ++ show range16) $ do
+          inX 0 range16 `shouldBe` False
 
 main :: IO ()
 main = hspec spec

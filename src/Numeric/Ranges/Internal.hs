@@ -9,7 +9,7 @@
 -- Portability :
 --
 -- |
--- Framework for working with numeric ranges.
+-- Module for internal representation of numeric ranges.
 --
 -----------------------------------------------------------------------------
 
@@ -266,8 +266,8 @@ distance r = supreme r - infimum r
 -- | Is the given element present in the range?
 --
 -- As an example, consider:
---   isX 3 $ 1 >< 3   -> False
---   isX 3 $ 1 >~ 3   -> True
+--   inX 3 $ 1 >< 3   -> False
+--   inX 3 $ 1 >~ 3   -> True
 inX :: (Num a, Ord a) => a -> Range a -> Bool
 inX _ Empty = False
 inX x rg@(Rg le re)
@@ -323,6 +323,12 @@ bisect :: (Fractional a, Ord a) => Range a -> (Range a, Range a)
 bisect Empty = error "bisect: Empty range."
 bisect r = splitBy (midpoint r) r
 
+-- | Extends both sides of a range.
+--
+-- Example: extends 2 [1,4] = [-1,6]
+extends :: (Num a, Ord a) => a -> Range a -> Range a
+extends x r = r + symmetric x
+
 -- | Tells us whether or not the given ranges intersect.
 intersect :: (Num a, Ord a) => Range a -> Range a -> Bool
 intersect Empty _ = False
@@ -353,8 +359,11 @@ applyOnEndpoints :: (Ord a, Num a) =>
   -> (a -> a -> a)
   -> (Extreme -> Extreme -> Extreme)
   -> Endpoint a
-applyOnEndpoints (E (xl, el)) (E (xr, er)) f g =
-  E (f xl xr, g el er)
+applyOnEndpoints le re f g =
+  endpoint (f vle vre) (g ele ere)
+  where
+  (ele, ere) = (extreme le, extreme re)
+  (vle, vre) = (value le, value re)
 
 -- | Intersection between two ranges.
 --
@@ -379,4 +388,4 @@ intersection lr rr
 hull :: (Ord a, Num a) => Range a -> Range a -> Range a
 hull Empty rr = rr
 hull lr Empty = lr
-hull lr rr = applyOnRanges min max lr rr 
+hull lr rr = applyOnRanges min max lr rr
