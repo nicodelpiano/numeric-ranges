@@ -85,8 +85,9 @@ instance (Num a, Ord a) => Num (Range a) where
 
   abs r@(Rg le re)
     | le >= 0 = r
-    | re <= 0 = negate r 
-    | otherwise = 0 ~~ (value $ max (-le) re) -- we should do a deeper analysis for open endpoints
+    | re <= 0 = negate r
+    -- we should do a deeper analysis for open endpoints
+    | otherwise = 0 ~~ (value $ max (-le) re)
   abs Empty = Empty
 
   signum = fmap signum
@@ -114,19 +115,19 @@ infix 3 ~~
 -- | Constructs an open range, i.e., (a, b).
 (><) :: (Num a, Ord a) => a -> a -> Range a
 x >< y
-  | x <= y = Rg (E (x, Open)) (E (y, Open))
+  | x < y = Rg (E (x, Open)) (E (y, Open))
   | otherwise = Empty
 
 -- | Constructs a left-opened range, i.e., (a, b].
 (>~) :: (Num a, Ord a) => a -> a -> Range a
 x >~ y
-  | x <= y = Rg (E (x, Open)) (E (y, Closed))
+  | x < y = Rg (E (x, Open)) (E (y, Closed))
   | otherwise = Empty
 
 -- | Constructs a right-open range, i.e., [a, b).
 (~<) :: (Num a, Ord a) => a -> a -> Range a
 x ~< y
-  | x <= y = Rg (E (x, Closed)) (E (y, Open))
+  | x < y = Rg (E (x, Closed)) (E (y, Open))
   | otherwise = Empty
 
 -- | Constructs a closed range, i.e., [a, b].
@@ -244,6 +245,11 @@ isOpenRange :: Range a -> Bool
 isOpenRange (Rg (E (_, Open)) (E (_, Open))) = True
 isOpenRange _ = False
 
+-- | Opens a range.
+openRange :: (Num a, Ord a) => Range a -> Range a
+openRange Empty = Empty
+openRange (Rg x y) = Rg (open x) (open y)
+
 -- | Range constructor.
 range :: Endpoint a -> Endpoint a -> Range a
 range = Rg
@@ -297,7 +303,7 @@ openFrom = (><inf)
 -- | Constructs a symmetric range.
 symmetric :: (Num a, Ord a) => a -> Range a
 symmetric x
-  | x >= 0 = (-x) ~~ x
+  | x >= 0 = (-x) >< x
   | otherwise = symmetric (-x)
 
 -- | Obtains the midpoint of a given range.
@@ -325,9 +331,15 @@ bisect r = splitBy (midpoint r) r
 
 -- | Extends both sides of a range.
 --
--- Example: extends 2 [1,4] = [-1,6]
-extends :: (Num a, Ord a) => a -> Range a -> Range a
-extends x r = r + symmetric x
+-- Example: extend 2 [1,4] = [-1,6]
+extend :: (Num a, Ord a) => a -> Range a -> Range a
+extend x r = r + symmetric x
+
+-- |
+--
+--
+cut :: (Num a, Ord a) => a -> Range a -> Range a
+cut = undefined
 
 -- | Tells us whether or not the given ranges intersect.
 intersect :: (Num a, Ord a) => Range a -> Range a -> Bool

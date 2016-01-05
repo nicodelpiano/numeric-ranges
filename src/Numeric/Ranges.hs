@@ -15,4 +15,4 @@
 
 module Numeric.Ranges where
 
-import Numeric.Ranges.Internal
+--import Numeric.Ranges.Internal
